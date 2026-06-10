@@ -7,11 +7,9 @@ import 'package:geocoding/geocoding.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 
-
 class HomeScreen extends StatefulWidget {
   final Map<String, dynamic>
   userData; // nangkep data yang dikirim dari halaman login tadi
-  
 
   const HomeScreen({super.key, required this.userData});
 
@@ -24,12 +22,51 @@ class _HomeScreenState extends State<HomeScreen> {
   String _alamatRealtime = "Sedang mencari lokasi GPS...";
   int countLaporanProcessed = 0;
   int countLaporanSelesai = 0;
+  RealtimeChannel? laporanChannel;
+
   @override
   void initState() {
     super.initState();
     _ambilLokasiAwal();
-    getLaporan(); // Otomatis nyari lokasi pas aplikasi dinyalain
+    getLaporan();
+
+    laporanChannel = Supabase.instance.client
+        .channel('laporan_status')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'laporan',
+          callback: (payload) {
+            print('Realtime triggered');
+            print(payload.newRecord);
+
+            final updatedData = payload.newRecord;
+
+            final index = seluruhLaporan.indexWhere(
+              (e) => e['id_laporan'] == updatedData['id_laporan'],
+            );
+
+            print('Index: $index');
+
+            if (index != -1) {
+              final oldStatus = seluruhLaporan[index]['status'];
+              final newStatus = updatedData['status'];
+
+              print('Old: $oldStatus');
+              print('New: $newStatus');
+
+              seluruhLaporan[index]['status'] = newStatus;
+
+              setState(() {});
+            }
+          },
+        )
+        .subscribe((status, error) {
+          print('STATUS: $status');
+          print('ERROR: $error');
+        });
   }
+
   Future<void> _ambilLokasiAwal() async {
     try {
       // A. CEK APAKAH LAYANAN GPS AKTIF
@@ -58,7 +95,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
       // C. JIKA IZIN AMAN, BARU AMBIL KOORDINAT
       Position posisi = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
+        // desiredAccuracy: LocationAccuracy.high,
       );
 
       // D. TERJEMAHKAN KOORDINAT JADI ALAMAT
@@ -104,63 +141,55 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<Map<String, dynamic>> seluruhLaporan = [];
 
   Future<String> getAlamat(double lat, double lng) async {
-  try {
-    List<Placemark> placemarks =
-        await placemarkFromCoordinates(lat, lng);
+    try {
+      List<Placemark> placemarks = await placemarkFromCoordinates(lat, lng);
 
-    Placemark place = placemarks.first;
+      Placemark place = placemarks.first;
 
-    return '${place.subAdministrativeArea}, '
-           '${place.administrativeArea}, '
-           '${place.country}';
-  } catch (e, st) {
-    debugPrint('ERROR: $e');
-    debugPrintStack(stackTrace: st);
-    return e.toString();
+      return '${place.subAdministrativeArea}, '
+          '${place.administrativeArea}, '
+          '${place.country}';
+    } catch (e, st) {
+      debugPrint('ERROR: $e');
+      debugPrintStack(stackTrace: st);
+      return e.toString();
+    }
   }
-}
 
-Future<void> getLaporan() async {
-  final data = await Supabase.instance.client
-      .from('laporan')
-      .select()
-      .eq('pelapor_id', widget.userData['id']);
+  Future<void> getLaporan() async {
+    final data = await Supabase.instance.client
+        .from('laporan')
+        .select()
+        .eq('pelapor_id', widget.userData['id']);
 
-  seluruhLaporan.clear();
+    seluruhLaporan.clear();
 
-  for (final item in data) {
-    final alamat = await getAlamat(
-      item['latitude'],
-      item['longitude']
-    );
+    countLaporanProcessed = 0;
+    countLaporanSelesai = 0;
+    for (final item in data) {
+      final alamat = await getAlamat(item['latitude'], item['longitude']);
 
-    item['alamat'] = alamat;
-    seluruhLaporan.add(item);
-    if(item['status'] == "Diproses"){
-      countLaporanProcessed += 1;
-    }else if(item['status'] == "Selesai"){
-      countLaporanSelesai += 1;
-    }else{}
+      item['alamat'] = alamat;
+      seluruhLaporan.add(item);
+      if (item['status'] == "Diproses") {
+        countLaporanProcessed += 1;
+      } else if (item['status'] == "Selesai") {
+        countLaporanSelesai += 1;
+      } else {}
+    }
+    setState(() {});
+    print(seluruhLaporan);
   }
-  setState(() {});
-}
 
-String formatTanggalIndonesia(String tanggal) {
-  try {
-    final dateTime = DateTime.parse(tanggal);
+  String formatTanggalIndonesia(String tanggal) {
+    try {
+      final dateTime = DateTime.parse(tanggal);
 
-    return DateFormat(
-      'dd MMMM yyyy',
-      'id_ID',
-    ).format(dateTime.toLocal());
-  } catch (e) {
-    return '-';
+      return DateFormat('dd MMMM yyyy', 'id_ID').format(dateTime.toLocal());
+    } catch (e) {
+      return '-';
+    }
   }
-}
-
-void countLaporan(){
-
-}
 
   // === FUNGSI POP-UP JIKA GPS BELUM NYALA ===
   void _tampilkanDialogGPSMati() {
@@ -224,23 +253,40 @@ void countLaporan(){
   }
 
   // === FUNGSI PINDAH HALAMAN DENGAN PENGECEKAN GPS ===
-Future<void> _navigateToAddReport(BuildContext context) async {
-  bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+  Future<void> _navigateToAddReport(BuildContext context) async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
 
-  if (!serviceEnabled) {
-    _tampilkanDialogGPSMati();
-    return;
+    if (!serviceEnabled) {
+      _tampilkanDialogGPSMati();
+      return;
+    }
+
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddReportScreen(userData: widget.userData),
+      ),
+    );
+
+    if (result == true) {
+      await getLaporan();
+    }
   }
 
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => AddReportScreen(
-        userData: widget.userData,
+  Future<void> _openProfile() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ProfileScreen(userData: widget.userData),
       ),
-    ),
-  );
-}
+    );
+
+    if (result != null) {
+      setState(() {
+        widget.userData.addAll(result);
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -273,13 +319,10 @@ Future<void> _navigateToAddReport(BuildContext context) async {
               title: const Text('Edit Profile'),
               onTap: () {
                 Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) =>
-                        ProfileScreen(userData: widget.userData),
-                  ),
-                );
+
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _openProfile();
+                });
               },
             ),
             const Divider(),
@@ -564,7 +607,7 @@ Future<void> _navigateToAddReport(BuildContext context) async {
 
                 // LOKASI
                 Row(
-                  children:[
+                  children: [
                     Icon(Icons.location_on, size: 12, color: Colors.grey),
                     SizedBox(width: 4),
                     Expanded(

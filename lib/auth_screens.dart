@@ -76,6 +76,8 @@ Future<void> _processLogin() async {
   }
 }
 
+
+  //Login form
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -280,6 +282,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               'email.eq.${_emailController.text},nik.eq.${_nikController.text}',
               )
               .maybeSingle();
+              
 
         if(availableUser != null){
           ScaffoldMessenger.of(context).showSnackBar(

@@ -14,10 +14,10 @@ class AddReportScreen extends StatefulWidget {
 }
 
 class _AddReportScreenState extends State<AddReportScreen> {
-  TextEditingController _deskripsiController = new TextEditingController();
+  final TextEditingController _deskripsiController = TextEditingController();
   late Position posisi;
   // === MENGUBAH SINGLE FILE MENJADI LIST FILE ===
-  List<File> _imageFiles = [];
+  final List<File> _imageFiles = [];
 
   String _alamatRealtime =
       "Sedang mencari lokasi GPS..."; // Untuk teks lokasi di bawah foto
@@ -164,7 +164,7 @@ class _AddReportScreenState extends State<AddReportScreen> {
             backgroundColor: const Color(0xFF10B981),
           ),
         );
-        Navigator.pop(context);
+        Navigator.pop(context, true);
       }
     } catch (error) {
       ScaffoldMessenger.of(context).showSnackBar(

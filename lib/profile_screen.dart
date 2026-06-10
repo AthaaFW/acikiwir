@@ -97,7 +97,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         backgroundColor: const Color(0xFF1A64F2),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => Navigator.pop(context,{
+            'nama': _nameController.text,
+          }),
         ),
         title: const Text(
           'Profile Saya',
